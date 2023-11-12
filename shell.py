@@ -3,11 +3,29 @@
 import os, sys, re
 
 pid = os.getpid()
+waitForPid = 0
 childMap = {}
 
 #Going to use 0 for input and 1 for output
 
 while(True):
+    #Implementing waiting for child process
+    while(waitForPid):
+        waitResult = os.waitid(waitForPid, 0)                        #Ask if a loop is necessary since waitid suspends this process anyways
+        if waitResult:
+            zPid, zStatus = waitResult.si_pid, waitResult.si_status
+            if zPid == waitrForPid:
+                waitForPid = None
+                del childMap[waitForPid]
+                os.write(1, "WaitForPid process complete".encode())
+    while childMap.keys():
+        waitResult = os.waitid(os.P_ALL, 0, os.WNOHANG | os.WEXITED)
+        if waitResult:
+            zPid, zStatus = waitResult.si_pid, waitResult.si_status
+            del childMap[zPid]
+            os.write(1, "Background zombie reaped".encode())
+        
+        
     os.write(1, "$ ".encode())
     userInput =  os.read(0, 100)               #Take user input. We are going to parse this
     if len(userInput) == 0:
@@ -15,7 +33,7 @@ while(True):
     else:
         argv = userInput.decode().replace('\n', '')   #Getting ride of the \n at the end of line
 
-        argv = re.split(" ", argv)
+        argv = re.split(" ", argv)         #creating my list of arguments
         for i in range(len(argv)):
             if argv[i] == "exit":
                 os.write(1, "Exiting...\n".encode())
@@ -44,8 +62,8 @@ while(True):
                         os.write(2, ("Child failed to exec %s" % program).encode())
                         sys.exit(1)
                 else:
-                    childMap.add(fk, args[i]) #Adding child's pid to map which command it originated from 
-                    if(args[i][-1] == "&"):
-                        waitpid(fk)
+                    childMap[fk] = args[i]         #Adding child's pid to map which command it originated from 
+                    if(args[i][-1] != "&"):
+                        waitForPid = fk
                     else:
-                        waitpid(None)
+                        waitForPid = None
