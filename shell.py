@@ -28,39 +28,59 @@ while(True):
     if len(userInput) == 0:
         exit()
     else:
-        argv = userInput.decode().replace('\n', '')   #Getting ride of the \n at the end of line
+        arguments = userInput.decode().replace('\n', '')   #Getting ride of the \n at the end of line
 
-        argv = re.split(" ", argv)         #creating my list of arguments
-        for i in range(len(argv)):
-            if argv[i] == "exit":
-                os.write(1, "Exiting...\n".encode())
-                exit()
-            elif argv[i] == "cd":                                   
-                if len(argv) > i+1:                                               
-                     os.chdir(argv[i+1])                                           
-                     i = i + 1
-            elif argv[i] == "ls":
-                os.write(1, "This should print the contents of the current directory".encode())
-            elif argv[i] == "cat":
-                if len(argv) > i+1:
-                    os.write("This should print the contents of whatever file is put".encode())
-            else:
-                #Going to attempt to execute a file
-                fk = os.fork()
-                #if child, execute; else,  map child's PID to command string to remember where it was made
-                if fk <  0:
-                    os.write(2, ("Fork attempt failed, returning %d" % fk).encode())
-                elif fk == 0:
-                    program = argv[i]
-                    arguments = argv[i+1:]
-                    try:
-                        os.execve(program, arguments, os.environ)
-                    except FileNotFoundError:
-                        os.write(2, ("Child failed to exec %s" % program).encode())
-                        sys.exit(1)
+        arguments = re.split(" | ", arguments)         #creating my list of arguments split on pipes
+        for args in arguments:
+            args = re.split(" < ", args)
+            for i in range(len(args)):
+                if args[i] == "exit":
+                    os.write(1, "Exiting...\n".encode())
+                    exit()
+                elif args[i] == "cd":                                   
+                    if len(args) > i+1:                                               
+                        os.chdir(args[i+1])                                           
+                        i = i + 1
+                elif args[i] == "ls":
+                    os.write(1, "This should print the contents of the current directory".encode())
+                elif args[i] == "cat":
+                    if len(args) > i+1:
+                        os.write("This should print the contents of whatever file is put".encode())
                 else:
-                    childMap[fk] = argv[i]         #Adding child's pid to map which command it originated from 
-                    if(argv[i][-1] != "&"):
-                        waitForPid = fk
+                    #Going to attempt to execute a file
+                    fk = os.fork()
+                    #if child, execute; else, Im a parent and will  map child's PID to command string to remember where it was made
+                    if fk <  0:
+                        os.write(2, ("Fork attempt failed, returning %d" % fk).encode())
+                        
+                    elif fk == 0:
+                        if(len(args) > 1):  #this means that there is at least 1 >
+                            os.close(1)
+                            os.open(args[i+1], os.O_CREAT | os.O_WRONLY)               
+                            os.set_inheritable(1, True)
+
+                            #the input run.py c 3 > foo.txt would be split into [run.py c 3, foo.txt] and then the first item would be
+                            #split into [run.py, c, 3] so we have the program and the rest of the list being its arguments. before splitting that
+                            #I make sure to open args[i+1] which in this case is foo.txt before blowing everything away with execve
+
+                            args = re.split(" ", args[i])
+                            program = args[i]
+                            arguments = args[i:]
+                            try:
+                                os.execve(program, arguments, os.environ)
+                            except FileNotFoundError:
+                                pass
+                            
+                        else:
+                            program = args[i]
+                            arguments = args[i:]
+                            try:
+                                os.execve(program, arguments, os.environ)
+                            except FileNotFoundError:
+                                pass
                     else:
-                        waitForPid = None
+                        childMap[fk] = argv[i]         #Adding child's pid to map which command it originated from 
+                        if(argv[i][-1] != "&"):
+                            waitForPid = fk
+                        else:
+                            waitForPid = None
