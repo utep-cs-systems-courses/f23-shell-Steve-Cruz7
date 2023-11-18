@@ -1,5 +1,6 @@
-I am a sample program!
-ME.md
+#shell.py#
+LICENSE
+README.md
 demos
 ls
 sample.py
