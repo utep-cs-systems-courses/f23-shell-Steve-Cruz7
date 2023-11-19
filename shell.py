@@ -9,17 +9,20 @@ childMap = {}
 #Going to use 0 for input and 1 for output
 
 while(True):
+    print("My pid: " + str(os.getpid()) + ", Parent pid: " + str(pid))
+    if (pid != os.getpid()):     #protects against naughty children
+        sys.exit(1)
     while childMap.keys():
         if(waitForPid != None):
             waitResult = os.waitid(os.P_ALL, waitForPid, os.WEXITED)        #Waiting on child process to complete before proceeding
             zPid, zStatus = waitResult.si_pid, waitResult.si_status
             del childMap[waitForPid]
             waitForPid = None
-            os.write(1, "Non-background zombie reaped\n".encode())
+            #os.write(1, "Non-background zombie reaped\n".encode())
         elif(waitResult := os.waitid(os.P_ALL, 0, os.WNOHANG | os.WEXITED)):      #If background process, not hanging
             zPid, zStatus = waitResult.si_pid, waitResult.si_status
             del childMap[zPid]
-            os.write(1, "Background zombie reaped".encode())
+            #os.write(1, "Background zombie reaped\n".encode())
         
         
     os.write(1, "$ ".encode())
@@ -31,14 +34,43 @@ while(True):
 
         arguments = re.split(" \| ", arguments)
         #creating my list of arguments split on pipes
-        for args in arguments:
-            
-            #The plan here is: For every part of arguments, we make a child to hook up the writing to the pipe, and the parent process will do
-            #the hookup for the reading of the next file. So child does args[i] while parent does args[i+1] and so on and so forth until
-            #i == len(args)
-
-            
-            args = re.split(" > ", args)
+        for j in range(len(arguments)):
+            if(os.getpid() != pid):
+                print("Child process: " + str(os.getpid()) + " exiting")
+                sys.exit(1)
+            if(len(arguments) > 1):
+                pr,pw = os.pipe()
+                for f in (pr, pw):
+                    os.set_inheritable(f, True)
+                    #Now that we've made the pipe, time to send off children to do dirty work
+                wc = os.fork()
+                if wc < 0:
+                    print("Failed to fork")
+                    sys.exit(1)
+                elif wc == 0:
+                    os.close(1)
+                    os.dup(pw)
+                    for fd in (pr, pw):
+                        os.close(fd)
+                else:
+                    j = j + 1
+                    rc = os.fork()
+                    if rc < 0:
+                        print("Failed to fork")
+                        sys.exit(1)
+                    elif rc == 0:
+                        os.close(0)
+                        os.dup(pr)
+                        for fd in (pw, pr):
+                            os.close(fd)
+                    else:
+                        for fd in (pw, pr):
+                            os.close(fd)
+                        os.wait()
+                            
+#Everything past this point has been tested and works
+            #print(j)
+            args = re.split(" > ", arguments[j])             
             output = None
             if(len(args) > 1):
                 output = args.pop(1)         #For now, going to assume only 1 redirect in args
@@ -73,16 +105,14 @@ while(True):
                             #the input run.py c 3 > foo.txt would be split into [run.py c 3, foo.txt] and then the first item would be
                             #split into [run.py, c, 3] so we have the program and the rest of the list being its arguments. before splitting that
                             #I make sure to open args[i+1] which in this case is foo.txt before blowing everything away with execve
-                            command = re.split(" ", section[i])
-                            program = command[i]
-                            arguments = command[i:]
+                            program = section[i]
+                            arguments = section[i:]
                             try:
                                 os.execve(program, arguments, os.environ)
                             except FileNotFoundError:
                                 pass
                             
                         else:
-                            args = re.split(" ", section[i])
                             program = section[i]
                             arguments = section[i:]
                             try:
